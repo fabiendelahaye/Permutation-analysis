@@ -1,0 +1,74 @@
+#feature enrichment for HELP-Tagging analysis
+
+#bed1=LOI
+#bed2=feature (from segway or ChromHMM - chr start stop feature)
+#bed3=HPAIIref (total number of interrogated sites)
+
+
+#in R 
+
+bed_boot<-function(bed1, bed2,bed3, n.iter=1000){
+
+bedTools.2in<-function(functionstring="intersectBed",bed1,bed2,opt.string="")
+{
+  #create temp files
+  a.file=tempfile()
+  b.file=tempfile()
+  out   =tempfile()
+  options(scipen =99) # not to use scientific notation when writing out
+ 
+  #write bed formatted dataframes to tempfile
+  write.table(bed1,file=a.file,quote=F,sep="\t",col.names=F,row.names=F)
+  write.table(bed2,file=b.file,quote=F,sep="\t",col.names=F,row.names=F)
+ 
+  # create the command string and call the command using system()
+  command=paste(functionstring,"-a",a.file,"-b",b.file,opt.string,">",out,sep=" ")
+  cat(command,"\n")
+  try(system(command))
+ 
+  res=try(read.table(out,header=F),silent=T)
+  
+  unlink(a.file);unlink(b.file);unlink(out)
+  if (is(res, "try-error")) return(mat.or.vec(0,3)) else return(res)
+
+}
+
+mainobs<-try(bedTools.2in(bed1=bed1, bed2=bed2), silent=T)
+A<-ifelse(!is.null(ncol(mainobs)),
+ {(length(which(!duplicated(mainobs[,2]))))},
+ {1})
+mainobs<-A
+ 
+
+simulations<-sapply(1:n.iter, function(x){
+print(x)
+newbed<-bed3[order(rnorm(1:nrow(bed3)))[1:nrow(bed1)],]
+temp<-try(bedTools.2in(bed1=newbed, bed2=bed2), silent=T)
+ifelse(!is.null(ncol(temp)),
+ {return(length(which(!duplicated(temp[,2]))))},
+ {1})})
+
+wilcox.p<-wilcox.test(simulations, mu=mainobs)$p.value
+
+return(list(mainobs, simulations, wilcox.p))}
+
+#create a list for each feature
+
+split=split(feature,feature[,4])
+
+perm=lapply(split,function(x){
+feat=bed_boot(LOI,x,HPAII,n.iter=10000)
+final=data.frame(x[1,4],t(do.call(rbind,feat)))
+return(final)
+})
+
+
+final=do.call(rbind,perm)
+colnames(final)=c("feature","overlap","permutation","pv")
+
+##the outcome contain, the overlap between LOI and each feature,the permutation of  the overlap between HPAII and each feature and the significance of the enrichment for each feature
+
+
+
+
+
